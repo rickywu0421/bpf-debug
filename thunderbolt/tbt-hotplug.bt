@@ -1,0 +1,60 @@
+#!/usr/bin/env bpftrace
+
+BEGIN
+{
+    @start_ns = nsecs;
+    $start_ms = nsecs / 1000000;
+    printf("=== Thunderbolt hot-plug trace started at uptime: %d ms ===\n", $start_ms);
+}
+
+kfunc:tb_switch_alloc {
+    $uptime_ms = nsecs / 1000000;
+    $ts_ms = (nsecs - @start_ns) / 1000000;
+
+    printf("[%d ms][+%d ms] tb_switch_alloc(): allocating switch (route=%llx)\n", $uptime_ms, $ts_ms, args.route);
+}
+
+kfunc:tb_scan_switch {
+    $uptime_ms = nsecs / 1000000;
+    $ts_ms = (nsecs - @start_ns) / 1000000;
+
+    $sw = (struct tb_switch *)args.sw;
+    $lo = $sw->config.route_lo;
+    $hi = $sw->config.route_hi;
+    $route = ((uint64) $hi) << 32 | $lo;
+
+    printf("[%d ms][+%d ms] tb_scan_switch() called, scanning switch (route=%llx)\n", $uptime_ms, $ts_ms, $route);
+}
+
+// --- Thunderbolt: Attempt to find DisplayPort output ---
+kfunc:tb_find_dp_out {
+    $uptime_ms = nsecs / 1000000;
+    $ts_ms = (nsecs - @start_ns) / 1000000;
+
+    printf("[%d ms][+%d ms] tb_find_dp_out() called, start finding DP OUT port...\n", $uptime_ms, $ts_ms);
+}
+
+kretfunc:tb_find_dp_out {
+    $uptime_ms = nsecs / 1000000;
+    $ts_ms = (nsecs - @start_ns) / 1000000;
+
+    if (retval != 0) {
+        $port = (struct tb_port *)retval;
+        $sw = (struct tb_switch *)$port->sw;
+        $lo = $sw->config.route_lo;
+        $hi = $sw->config.route_hi;
+        $route = ((uint64) $hi) << 32 | $lo;
+        $port_num = $port->port;
+
+        printf("[%d ms][+%d ms] tb_find_dp_out() -> found DP OUT port (route=0x%llx, port=%u)\n", $uptime_ms, $ts_ms, $route, $port_num);
+    } else {
+        printf("[%d ms][+%d ms] tb_find_dp_out() -> no DP OUT port found\n", $uptime_ms, $ts_ms);
+    }
+}
+
+END
+{
+    $uptime_ms = nsecs / 1000000;
+    $ts_ms = (nsecs - @start_ns) / 1000000;
+    printf("\n[%d ms][+%d ms] Thunderbolt display trace completed.\n", $uptime_ms, $ts_ms);
+}

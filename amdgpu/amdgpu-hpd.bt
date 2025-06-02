@@ -1,0 +1,64 @@
+#!/usr/bin/env bpftrace
+
+BEGIN
+{
+    @start_ns = nsecs;
+    $start_ms = nsecs / 1000000;
+    printf("=== AMDGPU hot-plug trace started at uptime: %d ms ===\n", $start_ms);
+}
+
+// --- AMDGPU DC Link Detection ---
+kfunc:dc_link_detect {
+    $uptime_ms = nsecs / 1000000;
+    $ts_ms = (nsecs - @start_ns) / 1000000;
+
+    $reason = args.reason;
+
+    @reason2str[0] = "BOOT";
+    @reason2str[1] = "RESUMEFROMS3S4";
+    @reason2str[2] = "HPD";
+    @reason2str[3] = "HPDRX";
+    @reason2str[4] = "FALLBACK";
+    @reason2str[5] = "RETRAIN";
+    @reason2str[6] = "TDR";
+
+    printf("[%d ms][+%d ms] dc_link_detect() (reason=%s) called\n", $uptime_ms, $ts_ms, @reason2str[$reason]);
+}
+
+kretfunc:dc_link_detect {
+    $uptime_ms = nsecs / 1000000;
+    $ts_ms = (nsecs - @start_ns) / 1000000;
+
+    if (retval == 0) {
+        printf("[%d ms][+%d ms] dc_link_detect() -> link detected successfully\n", $uptime_ms, $ts_ms);
+    } else {
+        printf("[%d ms][+%d ms] dc_link_detect() -> link detection failed\n", $uptime_ms, $ts_ms);
+    }
+}
+
+// --- DRM/KMS: Hotplug event helpers ---
+// These help notify userspace (e.g., X11, Wayland, systemd-logind)
+kfunc:drm_kms_helper_hotplug_event {
+    $uptime_ms = nsecs / 1000000;
+    $ts_ms = (nsecs - @start_ns) / 1000000;
+    printf("[%d ms][+%d ms] drm_kms_helper_hotplug_event() called\n", $uptime_ms, $ts_ms);
+}
+
+kfunc:drm_helper_hpd_irq_event {
+    $uptime_ms = nsecs / 1000000;
+    $ts_ms = (nsecs - @start_ns) / 1000000;
+    printf("[%d ms][+%d ms] drm_helper_hpd_irq_event() called\n", $uptime_ms, $ts_ms);
+}
+
+kretfunc:drm_helper_hpd_irq_event {
+    $uptime_ms = nsecs / 1000000;
+    $ts_ms = (nsecs - @start_ns) / 1000000;
+    printf("[%d ms][+%d ms] drm_helper_hpd_irq_event() -> return %d\n", $uptime_ms, $ts_ms, retval);
+}
+
+END
+{
+    $uptime_ms = nsecs / 1000000;
+    $ts_ms = (nsecs - @start_ns) / 1000000;
+    printf("\n[%d ms][+%d ms] AMDGPU hot-plug trace completed.\n", $uptime_ms, $ts_ms);
+}
